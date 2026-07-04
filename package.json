@@ -1,8 +1,1 @@
-﻿{
-  "name": "picc-network-relayer",
-  "version": "1.0.0",
-  "description": "PICC Network Meta-Transaction Relayer",
-  "dependencies": {
-    "ethers": "^5.7.2"
-  }
-}
+{"name":"picc-network-relayer","version":"1.0.0","dependencies":{"ethers":"^5.7.2"}}
