@@ -1,4 +1,4 @@
-{
+﻿{
   "functions": {
     "api/relay.js": {
       "maxDuration": 30
