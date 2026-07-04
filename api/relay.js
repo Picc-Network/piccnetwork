@@ -58,13 +58,10 @@ export default async function handler(req, res) {
       maxFeePerGas: ethers.utils.parseUnits("100", "gwei"),
       maxPriorityFeePerGas: ethers.utils.parseUnits("30", "gwei")
     });
-
-    const receipt = await tx.wait();
-
+    // Non aspettiamo la conferma — restituiamo subito il txHash
     return res.status(200).json({
       success: true,
-      txHash: tx.hash,
-      blockNumber: receipt.blockNumber
+      txHash: tx.hash
     });
 
   } catch (error) {
