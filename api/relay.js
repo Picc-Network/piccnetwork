@@ -54,7 +54,9 @@ export default async function handler(req, res) {
     }
 
     const tx = await forwarder.execute(forwardRequest, signature, {
-      gasLimit: 600000
+      gasLimit: 600000,
+      maxFeePerGas: ethers.utils.parseUnits("100", "gwei"),
+      maxPriorityFeePerGas: ethers.utils.parseUnits("30", "gwei")
     });
 
     const receipt = await tx.wait();
