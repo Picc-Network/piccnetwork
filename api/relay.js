@@ -55,7 +55,7 @@ export default async function handler(req, res) {
 
     const tx = await forwarder.execute(forwardRequest, signature, {
       gasLimit: 600000,
-      maxFeePerGas: ethers.utils.parseUnits("100", "gwei"),
+      maxFeePerGas: ethers.utils.parseUnits("200", "gwei"),
       maxPriorityFeePerGas: ethers.utils.parseUnits("30", "gwei")
     });
     // Non aspettiamo la conferma — restituiamo subito il txHash
