@@ -53,12 +53,13 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Firma non valida" });
     }
 
+    const feeData = await provider.getFeeData();
     const tx = await forwarder.execute(forwardRequest, signature, {
       gasLimit: 600000,
-      maxFeePerGas: ethers.utils.parseUnits("200", "gwei"),
-      maxPriorityFeePerGas: ethers.utils.parseUnits("30", "gwei")
+      maxFeePerGas: feeData.maxFeePerGas.mul(2),
+      maxPriorityFeePerGas: feeData.maxPriorityFeePerGas.mul(2),
+      type: 2
     });
-    // Non aspettiamo la conferma — restituiamo subito il txHash
     return res.status(200).json({
       success: true,
       txHash: tx.hash
