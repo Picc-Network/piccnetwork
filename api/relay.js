@@ -54,10 +54,18 @@ export default async function handler(req, res) {
     }
 
     const feeData = await provider.getFeeData();
+    const minPriorityFee = ethers.utils.parseUnits("30", "gwei");
+    const minMaxFee = ethers.utils.parseUnits("100", "gwei");
+    const priorityFee = feeData.maxPriorityFeePerGas && feeData.maxPriorityFeePerGas.gt(minPriorityFee) 
+      ? feeData.maxPriorityFeePerGas.mul(2) 
+      : minPriorityFee;
+    const maxFee = feeData.maxFeePerGas && feeData.maxFeePerGas.gt(minMaxFee)
+      ? feeData.maxFeePerGas.mul(2)
+      : minMaxFee;
     const tx = await forwarder.execute(forwardRequest, signature, {
       gasLimit: 600000,
-      maxFeePerGas: feeData.maxFeePerGas.mul(2),
-      maxPriorityFeePerGas: feeData.maxPriorityFeePerGas.mul(2),
+      maxFeePerGas: maxFee,
+      maxPriorityFeePerGas: priorityFee,
       type: 2
     });
     return res.status(200).json({
