@@ -1,4 +1,4 @@
-﻿const { ethers } = require("ethers");
+const { ethers } = require("ethers");
 const admin = require("firebase-admin");
 
 const PICC_TOKEN_ADDRESS   = "0x7168696C997A2CE2Fd05224D79B69C09255085d1";
