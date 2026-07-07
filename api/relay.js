@@ -1,5 +1,4 @@
 const { ethers } = require("ethers");
-const admin = require("firebase-admin");
 
 const PICC_TOKEN_ADDRESS   = "0x7168696C997A2CE2Fd05224D79B69C09255085d1";
 const PICC_VOUCHER_ADDRESS = "0x430483F0cd869D3Ff2446ce57333d6AFC5592351";
@@ -17,19 +16,22 @@ const TOKEN_IFACE = new ethers.utils.Interface([
   "function transfer(address to, uint256 value) returns (bool)"
 ]);
 
-// --- Firebase Admin: inizializzato una sola volta per istanza della funzione ---
-// Su Vercel, imposta la variabile d'ambiente FIREBASE_SERVICE_ACCOUNT_JSON con il
-// contenuto JSON del service account (Firebase Console -> Impostazioni progetto ->
-// Account di servizio -> Genera nuova chiave privata), incollato come stringa unica.
-if (!admin.apps.length) {
-  try {
+// --- Firebase Admin: caricamento e inizializzazione protetti da try/catch ---
+// IMPORTANTE: questo blocco NON deve mai poter bloccare l'intera funzione.
+// Se firebase-admin non si carica o la chiave di servizio non è valida,
+// le notifiche push si disattivano da sole ma i pagamenti continuano a funzionare.
+let admin = null;
+try {
+  admin = require("firebase-admin");
+  if (admin.apps.length === 0) {
     const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
     admin.initializeApp({
       credential: admin.credential.cert(serviceAccount)
     });
-  } catch (e) {
-    console.error("Firebase Admin non inizializzato:", e.message);
   }
+} catch (e) {
+  console.error("Firebase Admin non disponibile, notifiche push disattivate:", e.message);
+  admin = null;
 }
 
 /**
@@ -39,6 +41,7 @@ if (!admin.apps.length) {
  */
 async function notificaDestinatarioSePossibile(to, data, txHash) {
   try {
+    if (!admin) return; // Firebase Admin non disponibile in questo ambiente
     if (to.toLowerCase() !== PICC_TOKEN_ADDRESS.toLowerCase()) return; // non è un transfer diretto
     if (!admin.apps.length) return; // Firebase Admin non configurato
 
