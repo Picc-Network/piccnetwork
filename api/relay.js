@@ -16,29 +16,29 @@ const TOKEN_IFACE = new ethers.utils.Interface([
   "function transfer(address to, uint256 value) returns (bool)"
 ]);
 
-// --- Firebase Admin: caricamento e inizializzazione protetti da try/catch ---
+// --- Firebase Admin (API modulare v12+): caricamento e inizializzazione protetti da try/catch ---
 // IMPORTANTE: questo blocco NON deve mai poter bloccare l'intera funzione.
 // Se firebase-admin non si carica o la chiave di servizio non è valida,
 // le notifiche push si disattivano da sole ma i pagamenti continuano a funzionare.
-let admin = null;
+let firebaseApp = null;
+let firestoreDb = null;
+let messaging = null;
 try {
-  const adminModule = require("firebase-admin");
-  // In alcuni runtime Vercel il modulo arriva "incartato" dentro .default invece
-  // di essere restituito direttamente: gestiamo entrambi i casi.
-  admin = (adminModule && adminModule.apps) ? adminModule : (adminModule && adminModule.default);
+  const { initializeApp, getApps, cert } = require("firebase-admin/app");
+  const { getFirestore } = require("firebase-admin/firestore");
+  const { getMessaging } = require("firebase-admin/messaging");
 
-  if (!admin || !admin.apps) {
-    console.error("Firebase Admin non disponibile: modulo caricato ma privo di .apps. Chiavi trovate:", Object.keys(adminModule || {}));
-    admin = null;
-  } else if (admin.apps.length === 0) {
+  if (getApps().length === 0) {
     const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount)
-    });
+    firebaseApp = initializeApp({ credential: cert(serviceAccount) });
+  } else {
+    firebaseApp = getApps()[0];
   }
+  firestoreDb = getFirestore(firebaseApp);
+  messaging = getMessaging(firebaseApp);
 } catch (e) {
   console.error("Firebase Admin non disponibile, notifiche push disattivate:", e.message);
-  admin = null;
+  firebaseApp = null;
 }
 
 /**
@@ -48,9 +48,8 @@ try {
  */
 async function notificaDestinatarioSePossibile(to, data, txHash) {
   try {
-    if (!admin) return; // Firebase Admin non disponibile in questo ambiente
+    if (!firebaseApp || !firestoreDb || !messaging) return; // Firebase Admin non disponibile
     if (to.toLowerCase() !== PICC_TOKEN_ADDRESS.toLowerCase()) return; // non è un transfer diretto
-    if (!admin.apps.length) return; // Firebase Admin non configurato
 
     const decoded = TOKEN_IFACE.parseTransaction({ data });
     if (decoded.name !== "transfer") return;
@@ -58,14 +57,13 @@ async function notificaDestinatarioSePossibile(to, data, txHash) {
     const destinatario = decoded.args.to.toLowerCase();
     const importo = ethers.utils.formatUnits(decoded.args.value, 18);
 
-    const db = admin.firestore();
-    const doc = await db.collection("fcm_tokens").doc(destinatario).get();
+    const doc = await firestoreDb.collection("fcm_tokens").doc(destinatario).get();
     if (!doc.exists) return; // destinatario senza token registrato (o mai aperto l'app)
 
     const token = doc.data().token;
     if (!token) return;
 
-    await admin.messaging().send({
+    await messaging.send({
       token,
       notification: {
         title: "PICC ricevuti",
