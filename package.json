@@ -1,1 +1,1 @@
-{"name":"picc-network-relayer","version":"1.0.0","dependencies":{"ethers":"^5.7.2"}}
+{"name":"picc-network-relayer","version":"1.0.0","dependencies":{"ethers":"^5.7.2","firebase-admin":"^14.1.0"}}
