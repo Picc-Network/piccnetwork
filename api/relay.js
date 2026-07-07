@@ -22,8 +22,15 @@ const TOKEN_IFACE = new ethers.utils.Interface([
 // le notifiche push si disattivano da sole ma i pagamenti continuano a funzionare.
 let admin = null;
 try {
-  admin = require("firebase-admin");
-  if (admin.apps.length === 0) {
+  const adminModule = require("firebase-admin");
+  // In alcuni runtime Vercel il modulo arriva "incartato" dentro .default invece
+  // di essere restituito direttamente: gestiamo entrambi i casi.
+  admin = (adminModule && adminModule.apps) ? adminModule : (adminModule && adminModule.default);
+
+  if (!admin || !admin.apps) {
+    console.error("Firebase Admin non disponibile: modulo caricato ma privo di .apps. Chiavi trovate:", Object.keys(adminModule || {}));
+    admin = null;
+  } else if (admin.apps.length === 0) {
     const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
     admin.initializeApp({
       credential: admin.credential.cert(serviceAccount)
