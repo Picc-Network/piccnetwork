@@ -129,9 +129,10 @@ export default async function handler(req, res) {
       type: 2
     });
 
-    // Fire-and-forget: non aspettiamo la conferma per rispondere all'app,
-    // ma proviamo comunque a notificare subito il destinatario.
-    notificaDestinatarioSePossibile(to, data, tx.hash);
+    // IMPORTANTE: aspettiamo (await) il tentativo di notifica prima di rispondere.
+    // In ambiente serverless, se rispondessimo prima, la funzione potrebbe essere
+    // congelata subito dopo la risposta, uccidendo l'invio della notifica a metà.
+    await notificaDestinatarioSePossibile(to, data, tx.hash);
 
     return res.status(200).json({
       success: true,
