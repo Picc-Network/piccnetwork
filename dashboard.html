@@ -23,19 +23,54 @@
   .errore { color: #ff8888; padding: 16px; background: #2a1414; border-radius: 8px; }
   .timestamp { color: #556677; font-size: 11px; margin-top: 24px; }
   #loading { color: #8899aa; }
+  #login-box { max-width: 320px; margin: 80px auto; text-align: center; }
+  #login-box input { width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #2a4a6b; background: #16273d; color: #fff; font-size: 15px; box-sizing: border-box; margin-bottom: 12px; }
+  #login-box button { width: 100%; padding: 12px; border-radius: 8px; border: none; background: #ffcc00; color: #0d1b2a; font-weight: bold; font-size: 15px; cursor: pointer; }
+  #login-errore { color: #ff8888; font-size: 13px; margin-top: 10px; min-height: 18px; }
 </style>
 </head>
 <body>
+  <div id="login-box">
+    <h1>🔒 PICC Network</h1>
+    <div class="sottotitolo">Inserisci la password per accedere al pannello</div>
+    <input type="password" id="password-input" placeholder="Password" autofocus>
+    <button onclick="verificaPassword()">ACCEDI</button>
+    <div id="login-errore"></div>
+  </div>
+
+  <div id="dashboard-content" style="display:none;">
   <h1>PICC Network — Pannello Operativo</h1>
   <div class="sottotitolo">Stato delle risorse critiche in tempo reale</div>
   <div id="contenuto"><p id="loading">Caricamento...</p></div>
+  </div>
 
   <script>
+    let passwordSalvata = sessionStorage.getItem('picc_dashboard_password') || '';
+
+    async function verificaPassword() {
+      const input = document.getElementById('password-input');
+      passwordSalvata = input.value;
+      const errore = document.getElementById('login-errore');
+      errore.textContent = '';
+      const ok = await caricaStato();
+      if (ok) {
+        sessionStorage.setItem('picc_dashboard_password', passwordSalvata);
+        document.getElementById('login-box').style.display = 'none';
+        document.getElementById('dashboard-content').style.display = 'block';
+        setInterval(caricaStato, 60000);
+      } else {
+        errore.textContent = 'Password errata, riprova.';
+      }
+    }
+
     async function caricaStato() {
       const contenuto = document.getElementById('contenuto');
       try {
-        const risposta = await fetch('/api/status');
+        const risposta = await fetch('/api/status', {
+          headers: { 'x-dashboard-password': passwordSalvata }
+        });
         const dati = await risposta.json();
+        if (risposta.status === 401) return false;
         if (!risposta.ok) throw new Error(dati.error || 'Errore sconosciuto');
 
         const w = dati.wallets;
@@ -67,12 +102,27 @@
           </div>
           <div class="timestamp">Blocco Polygon #${dati.blockNumber} — aggiornato ${new Date(dati.timestamp).toLocaleString('it-IT')}</div>
         `;
+        return true;
       } catch (e) {
         contenuto.innerHTML = `<div class="errore">Errore nel caricamento dello stato: ${e.message}</div>`;
+        return true; // errore diverso da password sbagliata: mostriamo comunque il pannello con l'errore
       }
     }
-    caricaStato();
-    setInterval(caricaStato, 60000); // aggiorna da solo ogni minuto
+
+    // Se la password è già salvata in questa sessione del browser, entra subito senza richiederla di nuovo
+    if (passwordSalvata) {
+      caricaStato().then(ok => {
+        if (ok) {
+          document.getElementById('login-box').style.display = 'none';
+          document.getElementById('dashboard-content').style.display = 'block';
+          setInterval(caricaStato, 60000);
+        }
+      });
+    }
+
+    document.getElementById('password-input').addEventListener('keypress', function(e) {
+      if (e.key === 'Enter') verificaPassword();
+    });
   </script>
 </body>
 </html>
