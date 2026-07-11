@@ -76,7 +76,20 @@ async function elencaCommercianti(token) {
  * Gestione fee identica a relay.js (Polygon richiede priority fee alta).
  */
 async function scriviCommercianteOnChain(provider, indirizzo, stato) {
-  const ownerWallet = new ethers.Wallet(process.env.OWNER_PRIVATE_KEY, provider);
+  const chiaveOwner = (process.env.OWNER_PRIVATE_KEY || "").trim();
+  if (!chiaveOwner) {
+    throw new Error("OWNER_PRIVATE_KEY non impostata o vuota");
+  }
+  // Controllo di formato senza mai esporre il valore: una chiave privata valida
+  // e' "0x" + 64 caratteri esadecimali (66 caratteri totali).
+  const formatoValido = /^0x[0-9a-fA-F]{64}$/.test(chiaveOwner);
+  if (!formatoValido) {
+    throw new Error(
+      `OWNER_PRIVATE_KEY ha un formato non valido (lunghezza attuale: ${chiaveOwner.length} caratteri, ` +
+      `attesi 66 cioe' "0x" + 64 esadecimali). Controlla che non manchi "0x" all'inizio e che non ci siano spazi o a-capo.`
+    );
+  }
+  const ownerWallet = new ethers.Wallet(chiaveOwner, provider);
   const token = new ethers.Contract(PICC_TOKEN_ADDRESS, TOKEN_ABI, ownerWallet);
 
   // Salvaguardia: verifica che questa chiave sia davvero l'owner del contratto,
