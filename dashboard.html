@@ -223,7 +223,7 @@
           body: JSON.stringify({ azione: 'aggiungi', indirizzo, nome, partitaIva })
         });
         const dati = await risposta.json();
-        if (!risposta.ok) throw new Error(dati.error || 'Errore sconosciuto');
+        if (!risposta.ok) throw new Error(dati.details ? `${dati.error}: ${dati.details}` : (dati.error || 'Errore sconosciuto'));
 
         msg.className = 'msg-commercianti ok';
         msg.textContent = `Commerciante registrato (tx ${dati.txHash.slice(0, 10)}...).`;
@@ -258,7 +258,7 @@
           body: JSON.stringify({ azione: 'rimuovi', indirizzo })
         });
         const dati = await risposta.json();
-        if (!risposta.ok) throw new Error(dati.error || 'Errore sconosciuto');
+        if (!risposta.ok) throw new Error(dati.details ? `${dati.error}: ${dati.details}` : (dati.error || 'Errore sconosciuto'));
 
         msg.className = 'msg-commercianti ok';
         msg.textContent = `Commerciante rimosso (tx ${dati.txHash.slice(0, 10)}...).`;
