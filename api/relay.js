@@ -16,6 +16,66 @@ const TOKEN_IFACE = new ethers.utils.Interface([
   "function transfer(address to, uint256 value) returns (bool)"
 ]);
 
+// Selettore della funzione riscattaBonusBenvenuto() (nessun parametro), per riconoscerla
+// dentro il campo "data" senza dover decodificare l'intera chiamata.
+const SELETTORE_RISCATTA_BONUS = ethers.utils.id("riscattaBonusBenvenuto()").slice(0, 10);
+
+// Wallet di test: saltano il controllo anti-abuso sul bonus di benvenuto (usati per
+// sviluppo/test, dove è normale reinstallare l'app più volte sullo stesso dispositivo).
+// 🔴 Aggiungi qui ogni nuovo wallet di test che crei.
+const WALLET_DI_TEST = [
+  "0xe4913dd350e8F503247e337573b4019450E00d5B", // Sergio
+  "0x36fb264545a005b8c147a97078b8879103cfec2c"  // moglie
+].map(a => a.toLowerCase());
+
+/**
+ * Se la chiamata è un riscatto del bonus di benvenuto, verifica che questo stesso
+ * dispositivo (identificato dall'Android ID mandato dall'app) non abbia già riscosso
+ * il bonus su un ALTRO wallet — impedisce di disinstallare/reinstallare l'app creando
+ * wallet nuovi per accumulare il bonus più volte. Ritorna null se tutto ok (via libera),
+ * altrimenti il messaggio di errore da restituire.
+ */
+async function verificaAntiAbusoBonus(to, data, from, deviceId) {
+  if (to.toLowerCase() !== PICC_TOKEN_ADDRESS.toLowerCase()) return null; // non è sul token
+  if (!data.startsWith(SELETTORE_RISCATTA_BONUS)) return null; // non è riscattaBonusBenvenuto
+
+  if (WALLET_DI_TEST.includes(from.toLowerCase())) return null; // wallet di test, nessun controllo
+
+  if (!firestoreDb) {
+    console.error("Firestore non disponibile: controllo anti-abuso bonus saltato per errore tecnico");
+    return null; // non blocchiamo per un problema nostro, solo per abuso rilevato
+  }
+
+  if (!deviceId) {
+    return "PICC: identificativo dispositivo mancante, impossibile verificare il bonus";
+  }
+
+  const doc = await firestoreDb.collection("device_bonus_claims").doc(deviceId).get();
+  if (doc.exists && doc.data().wallet && doc.data().wallet.toLowerCase() !== from.toLowerCase()) {
+    return "PICC: bonus di benvenuto gia' riscosso su questo dispositivo con un altro wallet";
+  }
+  return null;
+}
+
+/**
+ * Registra su Firestore quale wallet ha riscattato il bonus su questo dispositivo,
+ * da chiamare solo DOPO che la transazione è andata a buon fine.
+ */
+async function registraDispositivoBonus(to, data, from, deviceId) {
+  try {
+    if (!firestoreDb) return;
+    if (to.toLowerCase() !== PICC_TOKEN_ADDRESS.toLowerCase()) return;
+    if (!data.startsWith(SELETTORE_RISCATTA_BONUS)) return;
+    if (!deviceId) return;
+    await firestoreDb.collection("device_bonus_claims").doc(deviceId).set({
+      wallet: from,
+      timestamp: Date.now()
+    });
+  } catch (e) {
+    console.error("Errore registrazione dispositivo bonus:", e.message);
+  }
+}
+
 // --- Firebase Admin (API modulare v12+): caricamento e inizializzazione protetti da try/catch ---
 // IMPORTANTE: questo blocco NON deve mai poter bloccare l'intera funzione.
 // Se firebase-admin non si carica o la chiave di servizio non è valida,
@@ -87,7 +147,7 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
   try {
-    const { from, to, data, signature, nonce, gas } = req.body;
+    const { from, to, data, signature, nonce, gas, deviceId } = req.body;
     if (!from || !to || !data || !signature) {
       return res.status(400).json({ error: "Parametri mancanti: from, to, data, signature" });
     }
@@ -98,6 +158,12 @@ export default async function handler(req, res) {
     if (!allowedContracts.includes(to.toLowerCase())) {
       return res.status(403).json({ error: "Contratto non autorizzato" });
     }
+
+    const erroreAntiAbuso = await verificaAntiAbusoBonus(to, data, from, deviceId);
+    if (erroreAntiAbuso) {
+      return res.status(403).json({ error: erroreAntiAbuso });
+    }
+
     const provider = new ethers.providers.JsonRpcProvider(process.env.POLYGON_RPC_URL);
     const relayerWallet = new ethers.Wallet(process.env.RELAYER_PRIVATE_KEY, provider);
     const forwarder = new ethers.Contract(FORWARDER_ADDRESS, FORWARDER_ABI, relayerWallet);
@@ -133,6 +199,7 @@ export default async function handler(req, res) {
     // In ambiente serverless, se rispondessimo prima, la funzione potrebbe essere
     // congelata subito dopo la risposta, uccidendo l'invio della notifica a metà.
     await notificaDestinatarioSePossibile(to, data, tx.hash);
+    await registraDispositivoBonus(to, data, from, deviceId);
 
     return res.status(200).json({
       success: true,
