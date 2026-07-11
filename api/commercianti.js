@@ -1,0 +1,212 @@
+const { ethers } = require("ethers");
+
+// --- Indirizzi Polygon Mainnet (v8) ---
+const PICC_TOKEN_ADDRESS = "0xabfAE7065E2800d165EE484fa7A9BFC0369E8F38";
+
+// ABI minimo: solo cio' che serve a questo endpoint.
+// - isCommerciante / owner: letture di verifica
+// - setCommerciante: scrittura onlyOwner (registra/rimuove un commerciante)
+const TOKEN_ABI = [
+  "function isCommerciante(address) view returns (bool)",
+  "function owner() view returns (address)",
+  "function setCommerciante(address commerciante, bool stato)"
+];
+
+// --- Firebase Admin (stesso schema protetto usato in relay.js) ---
+// Se firebase-admin non si carica o la chiave non e' valida, l'anagrafica si
+// disattiva da sola ma le operazioni on-chain continuano a funzionare.
+let firestoreDb = null;
+try {
+  const { initializeApp, getApps, cert } = require("firebase-admin/app");
+  const { getFirestore } = require("firebase-admin/firestore");
+  if (getApps().length === 0) {
+    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
+    initializeApp({ credential: cert(serviceAccount) });
+  }
+  firestoreDb = getFirestore();
+} catch (e) {
+  console.error("Firebase Admin non disponibile, anagrafica commercianti disattivata:", e.message);
+  firestoreDb = null;
+}
+
+/**
+ * Legge l'anagrafica dei commercianti da Firestore (collection "commercianti")
+ * e affianca a ciascuno lo stato reale on-chain (isCommerciante). Cosi' dalla
+ * dashboard si vede subito se anagrafica e blockchain sono allineate.
+ */
+async function elencaCommercianti(token) {
+  const anagrafica = [];
+  if (firestoreDb) {
+    const snap = await firestoreDb.collection("commercianti").get();
+    snap.forEach((doc) => {
+      const d = doc.data() || {};
+      anagrafica.push({
+        indirizzo: doc.id,
+        nome: d.nome || "",
+        partitaIva: d.partitaIva || "",
+        registratoIl: d.registratoIl || null,
+        aggiornatoIl: d.aggiornatoIl || null
+      });
+    });
+  }
+
+  // Verifica on-chain in parallelo dello stato di ogni indirizzo in anagrafica.
+  const conStato = await Promise.all(
+    anagrafica.map(async (c) => {
+      let attivoOnChain = null; // null = non verificabile (errore RPC puntuale)
+      try {
+        attivoOnChain = await token.isCommerciante(c.indirizzo);
+      } catch (e) {
+        console.error(`Errore lettura isCommerciante per ${c.indirizzo}:`, e.message);
+      }
+      return { ...c, attivoOnChain };
+    })
+  );
+
+  // Ordina per nome attivita' (poi per indirizzo) per una lista stabile.
+  conStato.sort((a, b) =>
+    (a.nome || "").localeCompare(b.nome || "") || a.indirizzo.localeCompare(b.indirizzo)
+  );
+  return conStato;
+}
+
+/**
+ * Esegue setCommerciante on-chain col wallet OWNER (deployer). La chiave resta
+ * solo lato server, come RELAYER_PRIVATE_KEY: non viene mai esposta al browser.
+ * Gestione fee identica a relay.js (Polygon richiede priority fee alta).
+ */
+async function scriviCommercianteOnChain(provider, indirizzo, stato) {
+  const ownerWallet = new ethers.Wallet(process.env.OWNER_PRIVATE_KEY, provider);
+  const token = new ethers.Contract(PICC_TOKEN_ADDRESS, TOKEN_ABI, ownerWallet);
+
+  // Salvaguardia: verifica che questa chiave sia davvero l'owner del contratto,
+  // cosi' un errore di configurazione da' un messaggio chiaro invece di una revert.
+  const ownerOnChain = await token.owner();
+  if (ownerOnChain.toLowerCase() !== ownerWallet.address.toLowerCase()) {
+    throw new Error(
+      "La chiave OWNER_PRIVATE_KEY non corrisponde all'owner del contratto: " +
+      `owner on-chain ${ownerOnChain}, chiave configurata ${ownerWallet.address}`
+    );
+  }
+
+  const feeData = await provider.getFeeData();
+  const minPriorityFee = ethers.utils.parseUnits("30", "gwei");
+  const minMaxFee = ethers.utils.parseUnits("100", "gwei");
+  const priorityFee = feeData.maxPriorityFeePerGas && feeData.maxPriorityFeePerGas.gt(minPriorityFee)
+    ? feeData.maxPriorityFeePerGas.mul(2)
+    : minPriorityFee;
+  const maxFee = feeData.maxFeePerGas && feeData.maxFeePerGas.gt(minMaxFee)
+    ? feeData.maxFeePerGas.mul(2)
+    : minMaxFee;
+
+  const tx = await token.setCommerciante(indirizzo, stato, {
+    gasLimit: 120000,
+    maxFeePerGas: maxFee,
+    maxPriorityFeePerGas: priorityFee,
+    type: 2
+  });
+  // Aspettiamo la conferma: in ambiente serverless dobbiamo completare prima di
+  // rispondere, altrimenti la funzione puo' essere congelata a meta'.
+  const receipt = await tx.wait();
+  return { txHash: tx.hash, blockNumber: receipt.blockNumber };
+}
+
+/**
+ * Aggiorna l'anagrafica su Firestore dopo che la scrittura on-chain e' riuscita.
+ * Non deve mai far fallire la risposta: l'operazione on-chain e' gia' avvenuta.
+ */
+async function aggiornaAnagrafica(azione, indirizzo, nome, partitaIva) {
+  try {
+    if (!firestoreDb) return;
+    const ref = firestoreDb.collection("commercianti").doc(indirizzo);
+    if (azione === "aggiungi") {
+      const esistente = await ref.get();
+      const dati = {
+        nome: nome || "",
+        partitaIva: partitaIva || "",
+        aggiornatoIl: Date.now()
+      };
+      if (!esistente.exists) dati.registratoIl = Date.now();
+      await ref.set(dati, { merge: true });
+    } else if (azione === "rimuovi") {
+      // Manteniamo lo storico: non cancelliamo il documento, lo marchiamo come rimosso.
+      await ref.set({ rimossoIl: Date.now() }, { merge: true });
+    }
+  } catch (e) {
+    console.error("Errore aggiornamento anagrafica commercianti:", e.message);
+  }
+}
+
+export default async function handler(req, res) {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, x-dashboard-password");
+  if (req.method === "OPTIONS") return res.status(200).end();
+
+  // Protezione con password: stesso header della dashboard (status.js).
+  const passwordAttesa = process.env.DASHBOARD_PASSWORD;
+  const passwordRicevuta = req.headers["x-dashboard-password"];
+  if (!passwordAttesa) {
+    return res.status(500).json({ error: "Dashboard non configurata: manca DASHBOARD_PASSWORD" });
+  }
+  if (passwordRicevuta !== passwordAttesa) {
+    return res.status(401).json({ error: "Password errata" });
+  }
+
+  try {
+    const provider = new ethers.providers.JsonRpcProvider(process.env.POLYGON_RPC_URL);
+    const tokenLettura = new ethers.Contract(PICC_TOKEN_ADDRESS, TOKEN_ABI, provider);
+
+    // --- LETTURA: elenco commercianti ---
+    if (req.method === "GET") {
+      const commercianti = await elencaCommercianti(tokenLettura);
+      return res.status(200).json({
+        timestamp: new Date().toISOString(),
+        commercianti,
+        anagraficaDisponibile: firestoreDb !== null
+      });
+    }
+
+    // --- SCRITTURA: aggiungi / rimuovi commerciante ---
+    if (req.method === "POST") {
+      if (!process.env.OWNER_PRIVATE_KEY) {
+        return res.status(500).json({
+          error: "Chiave owner non configurata: aggiungi OWNER_PRIVATE_KEY nelle variabili d'ambiente Vercel"
+        });
+      }
+
+      const { azione, indirizzo, nome, partitaIva } = req.body || {};
+
+      if (azione !== "aggiungi" && azione !== "rimuovi") {
+        return res.status(400).json({ error: "Azione non valida: usa 'aggiungi' o 'rimuovi'" });
+      }
+      if (!indirizzo || !ethers.utils.isAddress(indirizzo)) {
+        return res.status(400).json({ error: "Indirizzo Ethereum non valido" });
+      }
+      // In fase di aggiunta chiediamo almeno il nome attivita' per l'anagrafica.
+      if (azione === "aggiungi" && (!nome || !nome.trim())) {
+        return res.status(400).json({ error: "Il nome dell'attivita' e' obbligatorio per registrare un commerciante" });
+      }
+
+      // Indirizzo normalizzato in checksum, usato sia on-chain sia come ID Firestore.
+      const indirizzoNorm = ethers.utils.getAddress(indirizzo);
+      const stato = azione === "aggiungi";
+
+      const risultato = await scriviCommercianteOnChain(provider, indirizzoNorm, stato);
+      await aggiornaAnagrafica(azione, indirizzoNorm, nome, partitaIva);
+
+      return res.status(200).json({
+        success: true,
+        azione,
+        indirizzo: indirizzoNorm,
+        txHash: risultato.txHash,
+        blockNumber: risultato.blockNumber
+      });
+    }
+
+    return res.status(405).json({ error: "Metodo non consentito" });
+  } catch (error) {
+    console.error("Commercianti error:", error.message);
+    return res.status(500).json({ error: "Errore gestione commercianti", details: error.message });
+  }
+};
