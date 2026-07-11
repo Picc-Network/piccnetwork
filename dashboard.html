@@ -27,6 +27,24 @@
   #login-box input { width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #2a4a6b; background: #16273d; color: #fff; font-size: 15px; box-sizing: border-box; margin-bottom: 12px; }
   #login-box button { width: 100%; padding: 12px; border-radius: 8px; border: none; background: #ffcc00; color: #0d1b2a; font-weight: bold; font-size: 15px; cursor: pointer; }
   #login-errore { color: #ff8888; font-size: 13px; margin-top: 10px; min-height: 18px; }
+
+  .tabella-commercianti { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13px; }
+  .tabella-commercianti th { text-align: left; color: #8899aa; font-weight: normal; padding: 6px 8px; border-bottom: 1px solid #2a4a6b; }
+  .tabella-commercianti td { padding: 8px; border-bottom: 1px solid #1e3348; vertical-align: top; }
+  .tabella-commercianti .piva { color: #99aabb; font-size: 12px; }
+  .tabella-commercianti .indirizzo { margin-top: 2px; }
+  .btn-rimuovi { background: #7a1a1a; color: #ffb0b0; border: none; padding: 6px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; }
+  .btn-rimuovi:hover { background: #a02020; }
+  .btn-rimuovi:disabled { opacity: 0.5; cursor: not-allowed; }
+  .form-commerciante { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; padding-top: 16px; border-top: 1px solid #2a4a6b; }
+  .form-commerciante input { flex: 1 1 160px; padding: 10px; border-radius: 6px; border: 1px solid #2a4a6b; background: #0d1b2a; color: #fff; font-size: 13px; box-sizing: border-box; }
+  .btn-aggiungi { background: #ffcc00; color: #0d1b2a; border: none; padding: 10px 18px; border-radius: 6px; font-weight: bold; font-size: 13px; cursor: pointer; }
+  .btn-aggiungi:hover { background: #ffd633; }
+  .btn-aggiungi:disabled { opacity: 0.5; cursor: not-allowed; }
+  .msg-commercianti { font-size: 12px; margin-top: 8px; min-height: 16px; }
+  .msg-commercianti.ok { color: #7fffb0; }
+  .msg-commercianti.errore-testo { color: #ff8888; }
+  .vuoto-commercianti { color: #667788; font-size: 13px; padding: 10px 0; }
 </style>
 </head>
 <body>
@@ -42,6 +60,19 @@
   <h1>PICC Network — Pannello Operativo</h1>
   <div class="sottotitolo">Stato delle risorse critiche in tempo reale</div>
   <div id="contenuto"><p id="loading">Caricamento...</p></div>
+
+  <div class="card">
+    <h2>🏪 Commercianti</h2>
+    <div id="contenuto-commercianti"><p id="loading-commercianti">Caricamento commercianti...</p></div>
+
+    <div class="form-commerciante">
+      <input type="text" id="nuovo-indirizzo" placeholder="Indirizzo 0x...">
+      <input type="text" id="nuovo-nome" placeholder="Nome attività">
+      <input type="text" id="nuovo-piva" placeholder="Partita IVA (opzionale)">
+      <button class="btn-aggiungi" id="btn-aggiungi-commerciante" onclick="aggiungiCommerciante()">+ Registra commerciante</button>
+    </div>
+    <div class="msg-commercianti" id="msg-commercianti"></div>
+  </div>
   </div>
 
   <script>
@@ -57,6 +88,7 @@
         sessionStorage.setItem('picc_dashboard_password', passwordSalvata);
         document.getElementById('login-box').style.display = 'none';
         document.getElementById('dashboard-content').style.display = 'block';
+        caricaCommercianti();
         setInterval(caricaStato, 60000);
       } else {
         errore.textContent = 'Password errata, riprova.';
@@ -109,12 +141,143 @@
       }
     }
 
+    function escapeHtml(testo) {
+      const div = document.createElement('div');
+      div.textContent = testo == null ? '' : String(testo);
+      return div.innerHTML;
+    }
+
+    async function caricaCommercianti() {
+      const contenuto = document.getElementById('contenuto-commercianti');
+      try {
+        const risposta = await fetch('/api/commercianti', {
+          headers: { 'x-dashboard-password': passwordSalvata }
+        });
+        const dati = await risposta.json();
+        if (!risposta.ok) throw new Error(dati.error || 'Errore sconosciuto');
+
+        if (!dati.commercianti.length) {
+          contenuto.innerHTML = '<div class="vuoto-commercianti">Nessun commerciante registrato tramite questo pannello.</div>';
+          return;
+        }
+
+        const righe = dati.commercianti.map(c => {
+          let badge;
+          if (c.attivoOnChain === true) badge = '<span class="badge-ok">ATTIVO</span>';
+          else if (c.attivoOnChain === false) badge = '<span class="badge-allarme">NON ATTIVO</span>';
+          else badge = '<span class="badge-allarme">NON VERIFICABILE</span>';
+
+          return `
+            <tr>
+              <td>
+                ${escapeHtml(c.nome) || '<em>(senza nome)</em>'}
+                ${c.partitaIva ? `<div class="piva">P.IVA ${escapeHtml(c.partitaIva)}</div>` : ''}
+                <div class="indirizzo">${escapeHtml(c.indirizzo)}</div>
+              </td>
+              <td>${badge}</td>
+              <td>
+                <button class="btn-rimuovi" onclick="rimuoviCommerciante('${c.indirizzo}', this)">Rimuovi</button>
+              </td>
+            </tr>
+          `;
+        }).join('');
+
+        contenuto.innerHTML = `
+          <table class="tabella-commercianti">
+            <thead>
+              <tr><th>Attività</th><th>Stato</th><th></th></tr>
+            </thead>
+            <tbody>${righe}</tbody>
+          </table>
+        `;
+      } catch (e) {
+        contenuto.innerHTML = `<div class="errore">Errore nel caricamento dei commercianti: ${escapeHtml(e.message)}</div>`;
+      }
+    }
+
+    async function aggiungiCommerciante() {
+      const indirizzo = document.getElementById('nuovo-indirizzo').value.trim();
+      const nome = document.getElementById('nuovo-nome').value.trim();
+      const partitaIva = document.getElementById('nuovo-piva').value.trim();
+      const msg = document.getElementById('msg-commercianti');
+      const bottone = document.getElementById('btn-aggiungi-commerciante');
+
+      msg.className = 'msg-commercianti';
+      msg.textContent = '';
+
+      if (!indirizzo || !nome) {
+        msg.className = 'msg-commercianti errore-testo';
+        msg.textContent = 'Indirizzo e nome attività sono obbligatori.';
+        return;
+      }
+
+      bottone.disabled = true;
+      bottone.textContent = 'Registrazione in corso...';
+      try {
+        const risposta = await fetch('/api/commercianti', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-dashboard-password': passwordSalvata
+          },
+          body: JSON.stringify({ azione: 'aggiungi', indirizzo, nome, partitaIva })
+        });
+        const dati = await risposta.json();
+        if (!risposta.ok) throw new Error(dati.error || 'Errore sconosciuto');
+
+        msg.className = 'msg-commercianti ok';
+        msg.textContent = `Commerciante registrato (tx ${dati.txHash.slice(0, 10)}...).`;
+        document.getElementById('nuovo-indirizzo').value = '';
+        document.getElementById('nuovo-nome').value = '';
+        document.getElementById('nuovo-piva').value = '';
+        await caricaCommercianti();
+      } catch (e) {
+        msg.className = 'msg-commercianti errore-testo';
+        msg.textContent = `Errore: ${e.message}`;
+      } finally {
+        bottone.disabled = false;
+        bottone.textContent = '+ Registra commerciante';
+      }
+    }
+
+    async function rimuoviCommerciante(indirizzo, bottone) {
+      if (!confirm(`Rimuovere il commerciante ${indirizzo}? Non genererà più backflow.`)) return;
+      const msg = document.getElementById('msg-commercianti');
+      msg.className = 'msg-commercianti';
+      msg.textContent = '';
+
+      bottone.disabled = true;
+      bottone.textContent = 'Rimozione...';
+      try {
+        const risposta = await fetch('/api/commercianti', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-dashboard-password': passwordSalvata
+          },
+          body: JSON.stringify({ azione: 'rimuovi', indirizzo })
+        });
+        const dati = await risposta.json();
+        if (!risposta.ok) throw new Error(dati.error || 'Errore sconosciuto');
+
+        msg.className = 'msg-commercianti ok';
+        msg.textContent = `Commerciante rimosso (tx ${dati.txHash.slice(0, 10)}...).`;
+        await caricaCommercianti();
+      } catch (e) {
+        msg.className = 'msg-commercianti errore-testo';
+        msg.textContent = `Errore: ${e.message}`;
+        bottone.disabled = false;
+        bottone.textContent = 'Rimuovi';
+      }
+    }
+
     // Se la password è già salvata in questa sessione del browser, entra subito senza richiederla di nuovo
     if (passwordSalvata) {
       caricaStato().then(ok => {
         if (ok) {
           document.getElementById('login-box').style.display = 'none';
           document.getElementById('dashboard-content').style.display = 'block';
+          caricaCommercianti();
           setInterval(caricaStato, 60000);
         }
       });
