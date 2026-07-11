@@ -2,7 +2,7 @@ const { ethers } = require("ethers");
 
 const PICC_TOKEN_ADDRESS = "0xabfAE7065E2800d165EE484fa7A9BFC0369E8F38";
 const DEPLOYER_ADDRESS   = "0xe4913dd350e8F503247e337573b4019450E00d5B";
-const TREASURY_ADDRESS   = "0x64827f347e87e6866a4ee39886381724951c2eac";
+const TREASURY_ADDRESS   = "0x1325e58A809717dc21397AB32a1A1C716f1cA884";
 
 const TOKEN_ABI = ["function balanceOf(address) view returns (uint256)"];
 
