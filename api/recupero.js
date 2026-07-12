@@ -1,5 +1,4 @@
-import { ethers } from "ethers";
-import crypto from "crypto";
+const crypto = require("crypto");
 
 // --- Configurazione ---
 const CODICE_VALIDITA_MS = 10 * 60 * 1000; // 10 minuti
@@ -8,21 +7,34 @@ const RICHIESTA_CODICE_COOLDOWN_MS = 60 * 1000; // min 1 minuto tra due richiest
 
 // --- Firebase Admin (stesso schema protetto usato in commercianti.js) ---
 let firestoreDb = null;
+let piccAuth = null;
+let piccMessaging = null;
 try {
   const { initializeApp, getApps, cert } = require("firebase-admin/app");
   const { getFirestore } = require("firebase-admin/firestore");
-  const { getAuth } = require("firebase-admin/auth");
-  const { getMessaging } = require("firebase-admin/messaging");
   if (getApps().length === 0) {
     const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
     initializeApp({ credential: cert(serviceAccount) });
   }
   firestoreDb = getFirestore();
-  global.__piccAuth = getAuth();
-  global.__piccMessaging = getMessaging();
 } catch (e) {
-  console.error("Firebase Admin non disponibile:", e.message);
+  console.error("Firebase Admin (Firestore) non disponibile:", e.message);
   firestoreDb = null;
+}
+
+// Auth e Messaging inizializzati separatamente: se uno dei due fallisce, non
+// deve nascondere il fatto che Firestore invece funziona correttamente.
+try {
+  const { getAuth } = require("firebase-admin/auth");
+  piccAuth = getAuth();
+} catch (e) {
+  console.error("Firebase Admin (Auth) non disponibile:", e.message);
+}
+try {
+  const { getMessaging } = require("firebase-admin/messaging");
+  piccMessaging = getMessaging();
+} catch (e) {
+  console.error("Firebase Admin (Messaging) non disponibile:", e.message);
 }
 
 // --- Utilità ---
@@ -102,7 +114,7 @@ async function avvisaVecchioDispositivo(walletAddress) {
     if (!doc.exists) return;
     const token = doc.data().token;
     if (!token) return;
-    await global.__piccMessaging.send({
+    await piccMessaging.send({
       token,
       notification: {
         title: "Wallet attivato su un nuovo dispositivo",
@@ -142,7 +154,8 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: "Parametri mancanti" });
       }
 
-      const decoded = await global.__piccAuth.verifyIdToken(googleIdToken);
+      if (!piccAuth) return res.status(500).json({ error: "Firebase Auth non disponibile lato server" });
+      const decoded = await piccAuth.verifyIdToken(googleIdToken);
       const googleUid = decoded.uid;
 
       const ref = firestoreDb.collection("utenti").doc(emailKey(email)).collection("recupero").doc("dati");
@@ -226,7 +239,8 @@ export default async function handler(req, res) {
       }
 
       // Codice corretto: verifica ora il secondo fattore (Google Sign-In)
-      const decoded = await global.__piccAuth.verifyIdToken(googleIdToken);
+      if (!piccAuth) return res.status(500).json({ error: "Firebase Auth non disponibile lato server" });
+      const decoded = await piccAuth.verifyIdToken(googleIdToken);
       const googleUid = decoded.uid;
       if (googleUid !== dati.googleUid) {
         return res.status(401).json({ error: "L'account Google non corrisponde a quello registrato per questo wallet" });
