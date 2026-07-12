@@ -276,6 +276,29 @@ export default async function handler(req, res) {
       });
     }
 
+    // -----------------------------------------------------------------
+    // AZIONE 4: controllo periodico di esclusività dispositivo. L'app lo
+    // chiama durante la sincronizzazione normale; se il dispositivo non è
+    // (più) quello autorizzato, deve disconnettersi e cancellare i dati
+    // locali del wallet (gestito lato app, non da questo endpoint).
+    // -----------------------------------------------------------------
+    if (azione === "verifica_dispositivo") {
+      const { email, androidId } = req.body;
+      if (!email || !androidId) {
+        return res.status(400).json({ error: "Parametri mancanti" });
+      }
+
+      const ref = firestoreDb.collection("utenti").doc(emailKey(email)).collection("recupero").doc("dati");
+      const doc = await ref.get();
+      // Nessun backup di recupero registrato per questa email: non blocchiamo
+      // nulla (es. wallet creati prima dell'introduzione di questo sistema).
+      if (!doc.exists) return res.status(200).json({ valido: true });
+
+      const dati = doc.data();
+      const valido = !dati.dispositivoAttivo || dati.dispositivoAttivo === androidId;
+      return res.status(200).json({ valido });
+    }
+
     return res.status(400).json({ error: "Azione non riconosciuta" });
   } catch (error) {
     console.error("Recupero error:", error.message);
