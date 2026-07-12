@@ -78,32 +78,34 @@ function generaCodiceOtp() {
   return crypto.randomInt(100000, 999999).toString(); // 6 cifre
 }
 
-async function inviaEmailCodice(email, codice) {
-  const apiKey = process.env.RESEND_API_KEY;
-  if (!apiKey) throw new Error("RESEND_API_KEY non configurato");
-
-  const risposta = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      from: "PICC Network <onboarding@resend.dev>",
-      to: [email],
-      subject: "Il tuo codice di recupero PICC Network",
-      html: `
-        <p>Hai richiesto di recuperare il tuo wallet PICC Network.</p>
-        <p style="font-size:28px;font-weight:bold;letter-spacing:4px;">${codice}</p>
-        <p>Questo codice scade tra 10 minuti. Se non hai richiesto tu questo recupero, ignora questa email.</p>
-      `
-    })
-  });
-
-  if (!risposta.ok) {
-    const dettaglio = await risposta.text().catch(() => "");
-    throw new Error(`Invio email fallito: ${risposta.status} ${dettaglio}`);
+let trasportoEmail = null;
+function getTrasportoEmail() {
+  if (trasportoEmail) return trasportoEmail;
+  const nodemailer = require("nodemailer");
+  const utente = process.env.GMAIL_USER;
+  const password = process.env.GMAIL_APP_PASSWORD;
+  if (!utente || !password) {
+    throw new Error("GMAIL_USER o GMAIL_APP_PASSWORD non configurati");
   }
+  trasportoEmail = nodemailer.createTransport({
+    service: "gmail",
+    auth: { user: utente, pass: password }
+  });
+  return trasportoEmail;
+}
+
+async function inviaEmailCodice(email, codice) {
+  const trasporto = getTrasportoEmail();
+  await trasporto.sendMail({
+    from: `"PICC Network" <${process.env.GMAIL_USER}>`,
+    to: email,
+    subject: "Il tuo codice di recupero PICC Network",
+    html: `
+      <p>Hai richiesto di recuperare il tuo wallet PICC Network.</p>
+      <p style="font-size:28px;font-weight:bold;letter-spacing:4px;">${codice}</p>
+      <p>Questo codice scade tra 10 minuti. Se non hai richiesto tu questo recupero, ignora questa email.</p>
+    `
+  });
 }
 
 /** Notifica push al vecchio dispositivo quando il wallet viene migrato altrove.
