@@ -77,7 +77,7 @@ async function inviaEmailCodice(email, codice) {
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
-      from: "PICC Network <recupero@piccnetwork.it>",
+      from: "PICC Network <onboarding@resend.dev>",
       to: [email],
       subject: "Il tuo codice di recupero PICC Network",
       html: `
