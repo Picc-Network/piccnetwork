@@ -116,7 +116,7 @@
           <div class="card ${w.deployer.allarme ? 'allarme' : ''}">
             <h2>🔧 Deployer ${w.deployer.allarme ? '<span class="badge-allarme">SOTTO SOGLIA</span>' : '<span class="badge-ok">OK</span>'}</h2>
             <div class="valore">${w.deployer.pol.toFixed(4)} POL</div>
-            <div class="descrizione">${w.deployer.descrizione}</div>
+            <div class="descrizione">${w.deployer.picc.toFixed(2)} PICC — ${w.deployer.descrizione}</div>
             <div class="indirizzo">${w.deployer.address}</div>
           </div>
           <div class="card">
@@ -125,12 +125,19 @@
             <div class="descrizione">${w.treasury.pol.toFixed(4)} POL — ${w.treasury.descrizione}</div>
             <div class="indirizzo">${w.treasury.address}</div>
           </div>
+          <div class="card">
+            <h2>💰 Riserva Incentivi</h2>
+            <div class="valore">${w.riservaIncentivi.picc.toFixed(2)} PICC</div>
+            <div class="descrizione">${w.riservaIncentivi.pol.toFixed(4)} POL — ${w.riservaIncentivi.descrizione}</div>
+            <div class="indirizzo">${w.riservaIncentivi.address}</div>
+          </div>
           <div class="link-esterni">
             <a href="${dati.linkEsterni.alchemyDashboard}" target="_blank">📊 Alchemy (CU rimanenti)</a>
             <a href="${dati.linkEsterni.vercelDashboard}" target="_blank">▲ Vercel (log & invocazioni)</a>
             <a href="${dati.linkEsterni.firebaseConsole}" target="_blank">🔥 Firebase (Firestore & FCM)</a>
             <a href="${dati.linkEsterni.polygonscanRelayer}" target="_blank">🔍 Polygonscan Relayer</a>
             <a href="${dati.linkEsterni.polygonscanTreasury}" target="_blank">🔍 Polygonscan Treasury</a>
+            <a href="${dati.linkEsterni.polygonscanRiserva}" target="_blank">🔍 Polygonscan Riserva</a>
           </div>
           <div class="timestamp">Blocco Polygon #${dati.blockNumber} — aggiornato ${new Date(dati.timestamp).toLocaleString('it-IT')}</div>
         `;

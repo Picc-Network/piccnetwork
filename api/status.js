@@ -3,6 +3,7 @@ const { ethers } = require("ethers");
 const PICC_TOKEN_ADDRESS = "0x2254a5067f212E1118c4D0C34D819a78f8528Ca5";
 const DEPLOYER_ADDRESS   = "0xe4913dd350e8F503247e337573b4019450E00d5B";
 const TREASURY_ADDRESS   = "0x1325e58A809717dc21397AB32a1A1C716f1cA884";
+const RISERVA_ADDRESS    = "0x47bF65b4f464053534EF33a55C7077eD9A57ce3C";
 
 const TOKEN_ABI = ["function balanceOf(address) view returns (uint256)"];
 
@@ -41,12 +42,20 @@ export default async function handler(req, res) {
     ]);
 
     const token = new ethers.Contract(PICC_TOKEN_ADDRESS, TOKEN_ABI, provider);
-    const treasuryPiccWei = await token.balanceOf(TREASURY_ADDRESS);
+    const [treasuryPiccWei, deployerPiccWei, riservaPiccWei, riservaPolWei] = await Promise.all([
+      token.balanceOf(TREASURY_ADDRESS),
+      token.balanceOf(DEPLOYER_ADDRESS),
+      token.balanceOf(RISERVA_ADDRESS),
+      provider.getBalance(RISERVA_ADDRESS)
+    ]);
 
     const relayerPol = parseFloat(ethers.utils.formatEther(relayerPolWei));
     const deployerPol = parseFloat(ethers.utils.formatEther(deployerPolWei));
     const treasuryPol = parseFloat(ethers.utils.formatEther(treasuryPolWei));
     const treasuryPicc = parseFloat(ethers.utils.formatUnits(treasuryPiccWei, 18));
+    const deployerPicc = parseFloat(ethers.utils.formatUnits(deployerPiccWei, 18));
+    const riservaPicc = parseFloat(ethers.utils.formatUnits(riservaPiccWei, 18));
+    const riservaPol = parseFloat(ethers.utils.formatEther(riservaPolWei));
 
     return res.status(200).json({
       timestamp: new Date().toISOString(),
@@ -63,6 +72,7 @@ export default async function handler(req, res) {
         deployer: {
           address: DEPLOYER_ADDRESS,
           pol: deployerPol,
+          picc: deployerPicc,
           soglia: SOGLIA_POL_DEPLOYER,
           allarme: deployerPol < SOGLIA_POL_DEPLOYER,
           descrizione: "Usato solo per il deploy o l'aggiornamento dei contratti, non serve per l'uso quotidiano dell'app."
@@ -72,6 +82,12 @@ export default async function handler(req, res) {
           pol: treasuryPol,
           picc: treasuryPicc,
           descrizione: "Deposito PICC e commissioni raccolte dalla rete."
+        },
+        riservaIncentivi: {
+          address: RISERVA_ADDRESS,
+          pol: riservaPol,
+          picc: riservaPicc,
+          descrizione: "Riserva PICC per bonus, campagne di adozione e liquidità del network. Non usato per il gas, gestito solo da script dedicati."
         }
       },
       linkEsterni: {
@@ -80,7 +96,8 @@ export default async function handler(req, res) {
         firebaseConsole: "https://console.firebase.google.com",
         polygonscanRelayer: `https://polygonscan.com/address/${relayerAddress}`,
         polygonscanDeployer: `https://polygonscan.com/address/${DEPLOYER_ADDRESS}`,
-        polygonscanTreasury: `https://polygonscan.com/address/${TREASURY_ADDRESS}`
+        polygonscanTreasury: `https://polygonscan.com/address/${TREASURY_ADDRESS}`,
+        polygonscanRiserva: `https://polygonscan.com/address/${RISERVA_ADDRESS}`
       }
     });
   } catch (error) {
