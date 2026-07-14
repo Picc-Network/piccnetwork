@@ -120,7 +120,7 @@
             <div class="indirizzo">${w.deployer.address}</div>
           </div>
           <div class="card">
-            <h2>🏦 Treasury</h2>
+            <h2>🏦 Treasury / Wallet Personale</h2>
             <div class="valore">${w.treasury.picc.toFixed(2)} PICC</div>
             <div class="descrizione">${w.treasury.pol.toFixed(4)} POL — ${w.treasury.descrizione}</div>
             <div class="indirizzo">${w.treasury.address}</div>
@@ -248,7 +248,7 @@
     }
 
     async function rimuoviCommerciante(indirizzo, bottone) {
-      if (!confirm(`Rimuovere il commerciante ${indirizzo}? Non genererà più backflow.`)) return;
+      if (!confirm(`Rimuovere il commerciante ${indirizzo}?\n\nSe non ha mai avuto movimenti PICC, verrà eliminato del tutto dall'anagrafica. Se ne ha già avuti, verrà solo disattivato (non genererà più backflow), mantenendo lo storico.`)) return;
       const msg = document.getElementById('msg-commercianti');
       msg.className = 'msg-commercianti';
       msg.textContent = '';
@@ -268,7 +268,9 @@
         if (!risposta.ok) throw new Error(dati.details ? `${dati.error}: ${dati.details}` : (dati.error || 'Errore sconosciuto'));
 
         msg.className = 'msg-commercianti ok';
-        msg.textContent = `Commerciante rimosso (tx ${dati.txHash.slice(0, 10)}...).`;
+        msg.textContent = dati.eliminatoDelTutto
+          ? `Commerciante eliminato del tutto (nessun movimento pregresso) — tx ${dati.txHash.slice(0, 10)}...`
+          : `Commerciante disattivato (aveva già movimenti, storico conservato) — tx ${dati.txHash.slice(0, 10)}...`;
         await caricaCommercianti();
       } catch (e) {
         msg.className = 'msg-commercianti errore-testo';

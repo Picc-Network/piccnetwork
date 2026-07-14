@@ -125,10 +125,37 @@ async function scriviCommercianteOnChain(provider, indirizzo, stato) {
 }
 
 /**
+ * Verifica se un indirizzo ha mai avuto un movimento PICC reale (in entrata o
+ * in uscita), interrogando lo storico completo via API Etherscan V2 (la stessa
+ * usata per la fotografia saldi in fase di migrazione v9). Se non ha mai avuto
+ * movimenti, è sicuro cancellarlo del tutto (probabile errore di battitura in
+ * fase di registrazione); altrimenti va solo disattivato, mantenendo lo storico.
+ */
+async function haAvutoMovimenti(indirizzo) {
+  const apiKey = process.env.ETHERSCAN_API_KEY;
+  if (!apiKey) {
+    // Senza API key non possiamo verificarlo con certezza: per prudenza,
+    // trattiamo come "ha avuto movimenti" (comportamento più sicuro, non
+    // cancella mai per errore uno storico che invece andrebbe conservato).
+    console.error("ETHERSCAN_API_KEY non configurata: impossibile verificare i movimenti, si procede solo con la disattivazione.");
+    return true;
+  }
+  const url = `https://api.etherscan.io/v2/api?chainid=137&module=account&action=tokentx&contractaddress=${PICC_TOKEN_ADDRESS}&address=${indirizzo}&page=1&offset=1&sort=asc&apikey=${apiKey}`;
+  const risposta = await fetch(url);
+  const dati = await risposta.json();
+  if (dati.status !== "1" || !Array.isArray(dati.result)) {
+    // Nessun risultato o errore dell'API: nessun movimento trovato, oppure
+    // "No transactions found" — in entrambi i casi trattiamo come "mai avuto movimenti".
+    return false;
+  }
+  return dati.result.length > 0;
+}
+
+/**
  * Aggiorna l'anagrafica su Firestore dopo che la scrittura on-chain e' riuscita.
  * Non deve mai far fallire la risposta: l'operazione on-chain e' gia' avvenuta.
  */
-async function aggiornaAnagrafica(azione, indirizzo, nome, partitaIva) {
+async function aggiornaAnagrafica(azione, indirizzo, nome, partitaIva, eliminaDelTutto) {
   try {
     if (!firestoreDb) return;
     const ref = firestoreDb.collection("commercianti").doc(indirizzo);
@@ -142,8 +169,15 @@ async function aggiornaAnagrafica(azione, indirizzo, nome, partitaIva) {
       if (!esistente.exists) dati.registratoIl = Date.now();
       await ref.set(dati, { merge: true });
     } else if (azione === "rimuovi") {
-      // Manteniamo lo storico: non cancelliamo il documento, lo marchiamo come rimosso.
-      await ref.set({ rimossoIl: Date.now() }, { merge: true });
+      if (eliminaDelTutto) {
+        // Nessun movimento mai registrato: sicuro cancellare del tutto,
+        // probabile errore di battitura in fase di registrazione.
+        await ref.delete();
+      } else {
+        // Ha già avuto movimenti reali: manteniamo lo storico, marchiamo
+        // solo come rimosso invece di cancellare il documento.
+        await ref.set({ rimossoIl: Date.now() }, { merge: true });
+      }
     }
   } catch (e) {
     console.error("Errore aggiornamento anagrafica commercianti:", e.message);
@@ -205,13 +239,23 @@ export default async function handler(req, res) {
       const indirizzoNorm = ethers.utils.getAddress(indirizzo);
       const stato = azione === "aggiungi";
 
+      // Per una rimozione, verifichiamo prima se questo indirizzo ha mai avuto
+      // movimenti PICC reali: se no, è sicuro cancellarlo del tutto dall'anagrafica
+      // (probabile errore di registrazione); se sì, si disattiva soltanto,
+      // mantenendo lo storico.
+      let eliminaDelTutto = false;
+      if (azione === "rimuovi") {
+        eliminaDelTutto = !(await haAvutoMovimenti(indirizzoNorm));
+      }
+
       const risultato = await scriviCommercianteOnChain(provider, indirizzoNorm, stato);
-      await aggiornaAnagrafica(azione, indirizzoNorm, nome, partitaIva);
+      await aggiornaAnagrafica(azione, indirizzoNorm, nome, partitaIva, eliminaDelTutto);
 
       return res.status(200).json({
         success: true,
         azione,
         indirizzo: indirizzoNorm,
+        eliminatoDelTutto: azione === "rimuovi" ? eliminaDelTutto : undefined,
         txHash: risultato.txHash,
         blockNumber: risultato.blockNumber
       });

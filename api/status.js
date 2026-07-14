@@ -81,7 +81,7 @@ export default async function handler(req, res) {
           address: TREASURY_ADDRESS,
           pol: treasuryPol,
           picc: treasuryPicc,
-          descrizione: "Deposito PICC e commissioni raccolte dalla rete."
+          descrizione: "Wallet personale del founder — raccoglie anche l'1% di commissione sui trasferimenti PICC."
         },
         riservaIncentivi: {
           address: RISERVA_ADDRESS,
