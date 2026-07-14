@@ -45,6 +45,16 @@
   .msg-commercianti.ok { color: #7fffb0; }
   .msg-commercianti.errore-testo { color: #ff8888; }
   .vuoto-commercianti { color: #667788; font-size: 13px; padding: 10px 0; }
+  .toggle-switch { position: relative; display: inline-block; width: 42px; height: 24px; }
+  .toggle-switch input { opacity: 0; width: 0; height: 0; }
+  .toggle-slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #4a4a4a; transition: .2s; border-radius: 24px; }
+  .toggle-slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; transition: .2s; border-radius: 50%; }
+  .toggle-switch input:checked + .toggle-slider { background-color: #1e5c3a; }
+  .toggle-switch input:checked + .toggle-slider:before { transform: translateX(18px); }
+  .toggle-switch input:disabled + .toggle-slider { opacity: 0.4; cursor: not-allowed; }
+  .btn-modifica { background: #1b3a52; color: #a0d0ff; border: none; padding: 6px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; margin-left: 6px; }
+  .btn-modifica:hover { background: #24507a; }
+  .azioni-riga { display: flex; align-items: center; gap: 8px; }
 </style>
 </head>
 <body>
@@ -190,7 +200,17 @@
               </td>
               <td>${badge}</td>
               <td>
-                ${c.rimossoIl ? '' : `<button class="btn-rimuovi" onclick="rimuoviCommerciante('${c.indirizzo}', this)">Rimuovi</button>`}
+                <div class="azioni-riga">
+                  ${c.rimossoIl ? '' : `
+                    <label class="toggle-switch" title="${c.attivoOnChain ? 'Disattiva' : 'Attiva'}">
+                      <input type="checkbox" ${c.attivoOnChain ? 'checked' : ''}
+                        onchange="toggleCommerciante('${c.indirizzo}', ${c.attivoOnChain === true}, this)">
+                      <span class="toggle-slider"></span>
+                    </label>
+                    <button class="btn-modifica" onclick="modificaCommerciante('${c.indirizzo}', '${escapeHtml(c.nome || '').replace(/'/g, "\\'")}', '${escapeHtml(c.partitaIva || '').replace(/'/g, "\\'")}')">Modifica</button>
+                    <button class="btn-rimuovi" onclick="rimuoviCommerciante('${c.indirizzo}', this)">Rimuovi</button>
+                  `}
+                </div>
               </td>
             </tr>
           `;
@@ -251,6 +271,63 @@
       } finally {
         bottone.disabled = false;
         bottone.textContent = '+ Registra commerciante';
+      }
+    }
+
+    async function toggleCommerciante(indirizzo, statoAttuale, checkbox) {
+      const nuovoStato = !statoAttuale;
+      checkbox.disabled = true;
+      const msg = document.getElementById('msg-commercianti');
+      msg.className = 'msg-commercianti';
+      msg.textContent = 'Aggiornamento in corso...';
+      try {
+        const risposta = await fetch('/api/commercianti', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-dashboard-password': passwordSalvata },
+          body: JSON.stringify({ azione: nuovoStato ? 'attiva' : 'disattiva', indirizzo })
+        });
+        const dati = await risposta.json();
+        if (!risposta.ok) throw new Error(dati.details ? `${dati.error}: ${dati.details}` : (dati.error || 'Errore sconosciuto'));
+
+        msg.className = 'msg-commercianti ok';
+        msg.textContent = `Commerciante ${nuovoStato ? 'attivato' : 'disattivato'} (tx ${dati.txHash.slice(0, 10)}...).`;
+        await caricaCommercianti();
+      } catch (e) {
+        checkbox.checked = statoAttuale; // ripristina lo stato visivo se fallisce
+        checkbox.disabled = false;
+        msg.className = 'msg-commercianti errore-testo';
+        msg.textContent = `Errore: ${e.message}`;
+      }
+    }
+
+    async function modificaCommerciante(indirizzo, nomeAttuale, pivaAttuale) {
+      const nuovoNome = prompt('Nome attività:', nomeAttuale);
+      if (nuovoNome === null) return; // annullato
+      if (!nuovoNome.trim()) {
+        alert('Il nome non può essere vuoto.');
+        return;
+      }
+      const nuovaPiva = prompt('Partita IVA (lascia vuoto se non disponibile):', pivaAttuale);
+      if (nuovaPiva === null) return; // annullato
+
+      const msg = document.getElementById('msg-commercianti');
+      msg.className = 'msg-commercianti';
+      msg.textContent = 'Salvataggio in corso...';
+      try {
+        const risposta = await fetch('/api/commercianti', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-dashboard-password': passwordSalvata },
+          body: JSON.stringify({ azione: 'modifica', indirizzo, nome: nuovoNome.trim(), partitaIva: nuovaPiva.trim() })
+        });
+        const dati = await risposta.json();
+        if (!risposta.ok) throw new Error(dati.details ? `${dati.error}: ${dati.details}` : (dati.error || 'Errore sconosciuto'));
+
+        msg.className = 'msg-commercianti ok';
+        msg.textContent = 'Dati commerciante aggiornati.';
+        await caricaCommercianti();
+      } catch (e) {
+        msg.className = 'msg-commercianti errore-testo';
+        msg.textContent = `Errore: ${e.message}`;
       }
     }
 

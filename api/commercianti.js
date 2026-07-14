@@ -221,29 +221,66 @@ export default async function handler(req, res) {
       });
     }
 
-    // --- SCRITTURA: aggiungi / rimuovi commerciante ---
+    // --- SCRITTURA: aggiungi / rimuovi / attiva / disattiva / modifica ---
     if (req.method === "POST") {
+      const { azione, indirizzo, nome, partitaIva } = req.body || {};
+
+      const azioniValide = ["aggiungi", "rimuovi", "attiva", "disattiva", "modifica"];
+      if (!azioniValide.includes(azione)) {
+        return res.status(400).json({ error: `Azione non valida: usa una tra ${azioniValide.join(", ")}` });
+      }
+      if (!indirizzo || !ethers.utils.isAddress(indirizzo)) {
+        return res.status(400).json({ error: "Indirizzo Ethereum non valido" });
+      }
+      // In fase di aggiunta o modifica chiediamo almeno il nome attivita'.
+      if ((azione === "aggiungi" || azione === "modifica") && (!nome || !nome.trim())) {
+        return res.status(400).json({ error: "Il nome dell'attivita' e' obbligatorio" });
+      }
+
+      const indirizzoNorm = ethers.utils.getAddress(indirizzo);
+
+      // --- "modifica": tocca SOLO l'anagrafica Firestore, mai lo stato on-chain ---
+      if (azione === "modifica") {
+        if (!firestoreDb) {
+          return res.status(500).json({ error: "Anagrafica non disponibile (Firestore non configurato)" });
+        }
+        const ref = firestoreDb.collection("commercianti").doc(indirizzoNorm);
+        const esistente = await ref.get();
+        if (!esistente.exists) {
+          return res.status(404).json({ error: "Nessun commerciante registrato con questo indirizzo da modificare" });
+        }
+        await ref.set({ nome: nome.trim(), partitaIva: partitaIva || "", aggiornatoIl: Date.now() }, { merge: true });
+        return res.status(200).json({ success: true, azione, indirizzo: indirizzoNorm });
+      }
+
       if (!process.env.OWNER_PRIVATE_KEY) {
         return res.status(500).json({
           error: "Chiave owner non configurata: aggiungi OWNER_PRIVATE_KEY nelle variabili d'ambiente Vercel"
         });
       }
 
-      const { azione, indirizzo, nome, partitaIva } = req.body || {};
+      // --- "attiva"/"disattiva": interruttore leggero, SOLO on-chain, non
+      // tocca mai lo storico Firestore (nessun rimossoIl, nessuna cancellazione).
+      // Pensato per sospendere/riattivare un commerciante senza conseguenze
+      // sull'anagrafica, a differenza di "rimuovi" più sotto.
+      if (azione === "attiva" || azione === "disattiva") {
+        const nuovoStato = azione === "attiva";
+        const risultato = await scriviCommercianteOnChain(provider, indirizzoNorm, nuovoStato);
+        if (firestoreDb) {
+          await firestoreDb.collection("commercianti").doc(indirizzoNorm)
+            .set({ aggiornatoIl: Date.now() }, { merge: true })
+            .catch((e) => console.error("Errore aggiornamento aggiornatoIl:", e.message));
+        }
+        return res.status(200).json({
+          success: true,
+          azione,
+          indirizzo: indirizzoNorm,
+          txHash: risultato.txHash,
+          blockNumber: risultato.blockNumber
+        });
+      }
 
-      if (azione !== "aggiungi" && azione !== "rimuovi") {
-        return res.status(400).json({ error: "Azione non valida: usa 'aggiungi' o 'rimuovi'" });
-      }
-      if (!indirizzo || !ethers.utils.isAddress(indirizzo)) {
-        return res.status(400).json({ error: "Indirizzo Ethereum non valido" });
-      }
-      // In fase di aggiunta chiediamo almeno il nome attivita' per l'anagrafica.
-      if (azione === "aggiungi" && (!nome || !nome.trim())) {
-        return res.status(400).json({ error: "Il nome dell'attivita' e' obbligatorio per registrare un commerciante" });
-      }
-
-      // Indirizzo normalizzato in checksum, usato sia on-chain sia come ID Firestore.
-      const indirizzoNorm = ethers.utils.getAddress(indirizzo);
+      // --- "aggiungi" / "rimuovi": comportamento invariato rispetto a prima ---
       const stato = azione === "aggiungi";
 
       // Per una rimozione, verifichiamo prima se questo indirizzo ha mai avuto
