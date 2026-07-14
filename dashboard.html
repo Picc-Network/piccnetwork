@@ -170,9 +170,16 @@
 
         const righe = dati.commercianti.map(c => {
           let badge;
-          if (c.attivoOnChain === true) badge = '<span class="badge-ok">ATTIVO</span>';
-          else if (c.attivoOnChain === false) badge = '<span class="badge-allarme">NON ATTIVO</span>';
-          else badge = '<span class="badge-allarme">NON VERIFICABILE</span>';
+          if (c.rimossoIl) {
+            const dataRimozione = new Date(c.rimossoIl).toLocaleDateString('it-IT');
+            badge = `<span class="badge-allarme">RIMOSSO IL ${dataRimozione}</span>`;
+          } else if (c.attivoOnChain === true) {
+            badge = '<span class="badge-ok">ATTIVO</span>';
+          } else if (c.attivoOnChain === false) {
+            badge = '<span class="badge-allarme">NON ATTIVO</span>';
+          } else {
+            badge = '<span class="badge-allarme">NON VERIFICABILE</span>';
+          }
 
           return `
             <tr>
@@ -183,7 +190,7 @@
               </td>
               <td>${badge}</td>
               <td>
-                <button class="btn-rimuovi" onclick="rimuoviCommerciante('${c.indirizzo}', this)">Rimuovi</button>
+                ${c.rimossoIl ? '' : `<button class="btn-rimuovi" onclick="rimuoviCommerciante('${c.indirizzo}', this)">Rimuovi</button>`}
               </td>
             </tr>
           `;

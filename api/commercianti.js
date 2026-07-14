@@ -45,7 +45,8 @@ async function elencaCommercianti(token) {
         nome: d.nome || "",
         partitaIva: d.partitaIva || "",
         registratoIl: d.registratoIl || null,
-        aggiornatoIl: d.aggiornatoIl || null
+        aggiornatoIl: d.aggiornatoIl || null,
+        rimossoIl: d.rimossoIl || null
       });
     });
   }
