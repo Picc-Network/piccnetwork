@@ -16,14 +16,16 @@ const TOKEN_ABI = [
 // Se firebase-admin non si carica o la chiave non e' valida, l'anagrafica si
 // disattiva da sola ma le operazioni on-chain continuano a funzionare.
 let firestoreDb = null;
+let fieldValueRef = null;
 try {
   const { initializeApp, getApps, cert } = require("firebase-admin/app");
-  const { getFirestore } = require("firebase-admin/firestore");
+  const { getFirestore, FieldValue } = require("firebase-admin/firestore");
   if (getApps().length === 0) {
     const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
     initializeApp({ credential: cert(serviceAccount) });
   }
   firestoreDb = getFirestore();
+  fieldValueRef = FieldValue;
 } catch (e) {
   console.error("Firebase Admin non disponibile, anagrafica commercianti disattivata:", e.message);
   firestoreDb = null;
@@ -165,7 +167,11 @@ async function aggiornaAnagrafica(azione, indirizzo, nome, partitaIva, eliminaDe
       const dati = {
         nome: nome || "",
         partitaIva: partitaIva || "",
-        aggiornatoIl: Date.now()
+        aggiornatoIl: Date.now(),
+        // Se stiamo riattivando un indirizzo precedentemente rimosso, ripuliamo
+        // il segno di rimozione: altrimenti il badge "RIMOSSO IL..." resterebbe
+        // visualizzato per sempre nella dashboard, nonostante sia di nuovo attivo.
+        rimossoIl: fieldValueRef ? fieldValueRef.delete() : null
       };
       if (!esistente.exists) dati.registratoIl = Date.now();
       await ref.set(dati, { merge: true });
