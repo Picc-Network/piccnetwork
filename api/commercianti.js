@@ -1,7 +1,7 @@
 const { ethers } = require("ethers");
 
 // --- Indirizzi Polygon Mainnet (v8) ---
-const PICC_TOKEN_ADDRESS = "0x61b4687450af42b02dE5648548D18E71e14730d5";
+const PICC_TOKEN_ADDRESS = "0xf937c21d72dAd0216e59b7d914b838e6EDac4b92";
 
 // ABI minimo: solo cio' che serve a questo endpoint.
 // - isCommerciante / owner: letture di verifica
