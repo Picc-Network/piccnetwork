@@ -179,6 +179,38 @@ export default async function handler(req, res) {
     if (!isValid) {
       return res.status(400).json({ error: "Firma non valida" });
     }
+
+    // --- Simulazione preventiva (senza spendere gas) ---
+    // Il Forwarder non fa fallire la transazione anche quando la chiamata
+    // interna viene rifiutata dal contratto (es. "scontrino gia' utilizzato"):
+    // restituisce solo (false, motivo) invece di interrompere l'esecuzione.
+    // Senza questo controllo, il relayer risponderebbe "successo" anche per
+    // pagamenti in realtà respinti, lasciando l'utente senza alcun messaggio
+    // di errore. Simuliamo prima con callStatic (gratuito) per intercettare
+    // il rifiuto e restituire un errore chiaro, PRIMA di inviare la vera
+    // transazione e spendere gas per qualcosa che comunque non avrebbe effetto.
+    try {
+      const [simulazioneOk, datiRisposta] = await forwarder.callStatic.execute(forwardRequest, signature, { gasLimit: 600000 });
+      if (!simulazioneOk) {
+        let motivo = "Transazione rifiutata dal contratto";
+        try {
+          // Un revert Error(string) standard: 4 byte di selettore + stringa ABI-encoded.
+          if (datiRisposta && datiRisposta.length > 10) {
+            const decoded = ethers.utils.defaultAbiCoder.decode(["string"], "0x" + datiRisposta.slice(10));
+            motivo = decoded[0];
+          }
+        } catch (e) {
+          console.error("Impossibile decodificare il motivo del rifiuto:", e.message);
+        }
+        return res.status(400).json({ error: "Transazione rifiutata", details: motivo });
+      }
+    } catch (simError) {
+      // Un errore qui (non un semplice "success:false") di solito significa che
+      // la simulazione stessa non è andata a buon fine per un motivo tecnico.
+      console.error("Errore nella simulazione preventiva:", simError.message);
+      return res.status(400).json({ error: "Transazione non simulabile", details: simError.message });
+    }
+
     const feeData = await provider.getFeeData();
     const minPriorityFee = ethers.utils.parseUnits("30", "gwei");
     const minMaxFee = ethers.utils.parseUnits("100", "gwei");
@@ -195,6 +227,15 @@ export default async function handler(req, res) {
       type: 2
     });
 
+    // Anche dopo una simulazione positiva, aspettiamo la conferma reale prima
+    // di dichiarare successo: qualcosa potrebbe cambiare nell'intervallo tra
+    // simulazione e invio vero (es. un altro utente che nel frattempo usa lo
+    // stesso scontrino). Nota: poiché il Forwarder non fa fallire la
+    // transazione anche se la chiamata interna fallisse in quel preciso
+    // istante, receipt.status resterà comunque "1" (la vera protezione contro
+    // questo scenario resta la simulazione appena fatta sopra) — aspettiamo
+    // comunque la conferma per coerenza con il resto del sistema.
+    await tx.wait();
     // IMPORTANTE: aspettiamo (await) il tentativo di notifica prima di rispondere.
     // In ambiente serverless, se rispondessimo prima, la funzione potrebbe essere
     // congelata subito dopo la risposta, uccidendo l'invio della notifica a metà.
