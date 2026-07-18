@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hai ricevuto un Voucher — PICC Network</title>
+<style>
+  :root {
+    --navy:   #0B2447;
+    --teal:   #1C7293;
+    --orange: #E8743B;
+    --sand:   #F4EFE6;
+    --slate:  #5B6B82;
+    --white:  #FFFFFF;
+    --mint:   #5FB49C;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: var(--navy);
+    color: var(--white);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+
+  .card {
+    max-width: 460px;
+    width: 100%;
+    background: var(--sand);
+    color: var(--navy);
+    border-radius: 20px;
+    padding: 40px 28px;
+    text-align: center;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.35);
+  }
+
+  .eyebrow {
+    font-size: 12px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--orange);
+    font-weight: 700;
+    margin-bottom: 14px;
+  }
+
+  h1 {
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: 30px;
+    line-height: 1.2;
+    margin-bottom: 14px;
+  }
+
+  p {
+    color: var(--slate);
+    font-size: 15px;
+    line-height: 1.5;
+    margin-bottom: 22px;
+  }
+
+  .btn {
+    display: block;
+    width: 100%;
+    padding: 16px;
+    border-radius: 14px;
+    border: none;
+    font-size: 16px;
+    font-weight: 700;
+    text-decoration: none;
+    margin-bottom: 12px;
+    cursor: pointer;
+    color: var(--white);
+  }
+
+  .btn-primary {
+    background: var(--mint);
+  }
+
+  .note {
+    background: rgba(28, 114, 147, 0.08);
+    border-radius: 12px;
+    padding: 16px;
+    font-size: 13px;
+    color: var(--navy);
+    text-align: left;
+    line-height: 1.5;
+  }
+
+  .note b { color: var(--teal); }
+
+  .logo {
+    font-size: 40px;
+    margin-bottom: 6px;
+  }
+
+  .error {
+    display: none;
+    background: rgba(232, 116, 59, 0.1);
+    border-radius: 12px;
+    padding: 16px;
+    font-size: 13px;
+    color: var(--orange);
+    font-weight: 600;
+  }
+</style>
+</head>
+<body>
+
+  <div class="card">
+    <div class="logo">🎁</div>
+    <div class="eyebrow">PICC Network</div>
+    <h1>Hai ricevuto un Voucher</h1>
+    <p>Qualcuno ti ha inviato un buono in PICC, la moneta digitale del commercio locale siciliano.</p>
+
+    <a href="#" id="openAppBtn" class="btn btn-primary">🎁 Apri l'app e riscuoti</a>
+
+    <div class="error" id="errorBox">
+      Link non valido: manca il codice del voucher.
+    </div>
+
+    <div class="note">
+      <b>L'app è ancora in fase di test privato</b> e non è disponibile pubblicamente su Play Store.<br><br>
+      Se hai già PICC Network installata, il pulsante sopra dovrebbe aprirla direttamente sulla schermata di riscatto. Se non ce l'hai ancora, chiedi a chi ti ha inviato il voucher di aiutarti con l'installazione — il voucher resta valido per 7 giorni dall'emissione.
+    </div>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get('code');
+    const btn = document.getElementById('openAppBtn');
+    if (code) {
+      btn.href = 'piccnetwork://voucher?code=' + encodeURIComponent(code);
+    } else {
+      btn.style.display = 'none';
+      document.getElementById('errorBox').style.display = 'block';
+    }
+  </script>
+
+</body>
+</html>
