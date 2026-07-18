@@ -1,0 +1,12 @@
+﻿[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.progettopicc.app",
+      "sha256_cert_fingerprints": [
+        "93:B4:3E:B8:83:F1:74:5E:CB:CB:3D:B3:66:23:51:ED:CE:AC:D0:BC:46:85:BC:71:94:F7:6C:03:05:FE:C8:E4"
+      ]
+    }
+  }
+]
